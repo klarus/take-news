@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Take News 0.1 alpha</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#f0f9ff', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .card-enter { animation: fadeUp 0.3s ease both; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .spinner {
+      border: 3px solid #e2e8f0;
+      border-top-color: #0ea5e9;
+      border-radius: 50%;
+      width: 36px; height: 36px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .source-badge { transition: max-height 0.3s ease, opacity 0.3s ease; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
+      <div class="bg-brand-500 text-white rounded-lg p-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-slate-900 leading-tight">Take News <span class="text-xs font-normal text-slate-400">0.1 alpha</span></h1>
+        <p class="text-xs text-slate-400">Notizie verificate da più fonti</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Topic selector -->
+    <section>
+      <p class="text-sm font-medium text-slate-500 mb-3">Scegli un argomento</p>
+      <div id="topics" class="flex flex-wrap gap-2">
+        <!-- Topic chips generati via JS -->
+      </div>
+    </section>
+
+    <!-- Feed notizie -->
+    <section id="news-section" class="hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 id="topic-title" class="text-xl font-bold text-slate-900 capitalize"></h2>
+        <span id="update-time" class="text-xs text-slate-400"></span>
+      </div>
+      <div id="news-list" class="space-y-4"></div>
+    </section>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden flex-col items-center justify-center py-20 gap-4">
+      <div class="spinner"></div>
+      <p class="text-slate-400 text-sm">Raccolta e verifica notizie in corso…</p>
+    </div>
+
+    <!-- Errore -->
+    <div id="error" class="hidden bg-red-50 border border-red-200 rounded-xl p-5 text-center">
+      <p class="text-red-600 font-medium" id="error-msg"></p>
+      <button onclick="retryLast()" class="mt-3 text-sm text-red-500 underline">Riprova</button>
+    </div>
+
+    <!-- Placeholder iniziale -->
+    <div id="placeholder" class="flex flex-col items-center justify-center py-24 text-center">
+      <div class="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
+        <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/>
+        </svg>
+      </div>
+      <p class="text-slate-400 font-medium">Seleziona un argomento</p>
+      <p class="text-slate-300 text-sm mt-1">per vedere le notizie verificate</p>
+    </div>
+
+  </main>
+
+  <script>
+    // ─── Config ───────────────────────────────────────────────
+    const API_BASE = '/api/v1'
+
+    const TOPIC_ICONS = {
+      tecnologia: '💻', politica: '🏛️', economia: '📈',
+      scienza: '🔬', sport: '⚽', salute: '🏥',
+      mondo: '🌍', italia: '🇮🇹',
+    }
+
+    let lastTopic = null
+
+    // ─── Init ─────────────────────────────────────────────────
+    async function init() {
+      try {
+        const r = await fetch(`${API_BASE}/topics`)
+        const { topics } = await r.json()
+        renderTopics(topics)
+      } catch (e) {
+        showError('Impossibile connettersi al backend. Assicurati che il server sia avviato.')
+      }
+    }
+
+    // ─── Topic chips ──────────────────────────────────────────
+    function renderTopics(topics) {
+      const container = document.getElementById('topics')
+      container.innerHTML = topics.map(t => `
+        <button
+          id="chip-${t}"
+          onclick="loadTopic('${t}')"
+          class="topic-chip flex items-center gap-1.5 px-4 py-2 rounded-full border border-slate-200
+                 bg-white text-slate-700 text-sm font-medium hover:border-brand-500 hover:text-brand-600
+                 transition-all duration-150 cursor-pointer">
+          <span>${TOPIC_ICONS[t] || '📰'}</span>
+          <span class="capitalize">${t}</span>
+        </button>
+      `).join('')
+    }
+
+    function setActiveChip(topic) {
+      document.querySelectorAll('.topic-chip').forEach(c => {
+        c.classList.remove('border-brand-500', 'text-brand-600', 'bg-brand-50')
+        c.classList.add('border-slate-200', 'text-slate-700', 'bg-white')
+      })
+      const chip = document.getElementById(`chip-${topic}`)
+      if (chip) {
+        chip.classList.add('border-brand-500', 'text-brand-600', 'bg-brand-50')
+        chip.classList.remove('border-slate-200', 'text-slate-700', 'bg-white')
+      }
+    }
+
+    // ─── Load news ────────────────────────────────────────────
+    async function loadTopic(topic) {
+      lastTopic = topic
+      setActiveChip(topic)
+      showLoading()
+      try {
+        const r = await fetch(`${API_BASE}/news/${topic}`)
+        if (!r.ok) throw new Error(`Errore ${r.status}`)
+        const data = await r.json()
+        renderNews(data)
+      } catch (e) {
+        showError(`Errore nel caricamento delle notizie: ${e.message}`)
+      }
+    }
+
+    function retryLast() { if (lastTopic) loadTopic(lastTopic) }
+
+    // ─── Render news ──────────────────────────────────────────
+    function renderNews(data) {
+      hide('loading'); hide('placeholder'); hide('error')
+      show('news-section')
+
+      document.getElementById('topic-title').textContent =
+        `${TOPIC_ICONS[data.topic] || '📰'} ${data.topic}`
+
+      const time = new Date(data.fetched_at)
+      document.getElementById('update-time').textContent =
+        `aggiornato ${time.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`
+
+      const list = document.getElementById('news-list')
+      if (!data.events.length) {
+        list.innerHTML = `<p class="text-slate-400 text-center py-10">Nessuna notizia trovata per questo argomento.</p>`
+        return
+      }
+
+      list.innerHTML = data.events.map((event, i) => newsCard(event, i)).join('')
+    }
+
+    function newsCard(event, i) {
+      const verifiedBadge = event.verified
+        ? `<span class="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700
+                        bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
+             <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+               <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+             </svg>
+             Verificato · ${event.sources_count} fonti
+           </span>`
+        : `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-500
+                        bg-slate-100 rounded-full px-2.5 py-0.5">
+             ${event.sources_count} ${event.sources_count === 1 ? 'fonte' : 'fonti'}
+           </span>`
+
+      const sources = event.sources.map(s => `
+        <a href="${s.url}" target="_blank" rel="noopener"
+           class="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50 transition-colors group">
+          <span class="flex-shrink-0 w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-xs font-bold text-slate-500 mt-0.5">
+            ${s.source.charAt(0).toUpperCase()}
+          </span>
+          <div class="min-w-0">
+            <p class="text-xs font-semibold text-slate-600">${escHtml(s.source)}</p>
+            <p class="text-xs text-slate-500 truncate group-hover:text-brand-600">${escHtml(s.title)}</p>
+          </div>
+          <svg class="w-3 h-3 text-slate-300 group-hover:text-brand-500 flex-shrink-0 mt-1 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+          </svg>
+        </a>
+      `).join('')
+
+      return `
+        <article class="card-enter bg-white rounded-2xl border border-slate-200 overflow-hidden"
+                 style="animation-delay: ${i * 60}ms">
+          <div class="p-5">
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <h3 class="font-semibold text-slate-900 leading-snug text-base">${escHtml(event.headline)}</h3>
+              ${verifiedBadge}
+            </div>
+            <p class="text-slate-600 text-sm leading-relaxed">${escHtml(event.summary)}</p>
+          </div>
+          <div class="border-t border-slate-100">
+            <button
+              onclick="toggleSources(this)"
+              class="w-full flex items-center justify-between px-5 py-3 text-xs font-medium
+                     text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+              <span>Mostra fonti</span>
+              <svg class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div class="sources-panel hidden px-3 pb-3 space-y-0.5">
+              ${sources}
+            </div>
+          </div>
+        </article>
+      `
+    }
+
+    function toggleSources(btn) {
+      const panel = btn.nextElementSibling
+      const icon = btn.querySelector('svg')
+      const isOpen = !panel.classList.contains('hidden')
+      panel.classList.toggle('hidden')
+      icon.style.transform = isOpen ? '' : 'rotate(180deg)'
+      btn.querySelector('span').textContent = isOpen ? 'Mostra fonti' : 'Nascondi fonti'
+    }
+
+    // ─── UI helpers ───────────────────────────────────────────
+    function showLoading() {
+      hide('news-section'); hide('placeholder'); hide('error')
+      show('loading')
+      document.getElementById('loading').classList.add('flex')
+    }
+
+    function showError(msg) {
+      hide('loading'); hide('news-section'); hide('placeholder')
+      document.getElementById('error-msg').textContent = msg
+      show('error')
+    }
+
+    function show(id) { document.getElementById(id).classList.remove('hidden') }
+    function hide(id) {
+      const el = document.getElementById(id)
+      el.classList.add('hidden')
+      el.classList.remove('flex')
+    }
+
+    function escHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+    }
+
+    // ─── Start ────────────────────────────────────────────────
+    init()
+  </script>
+</body>
+</html>
