@@ -32,11 +32,11 @@ async def get_news_for_topic(topic: str) -> TopicNewsResponse:
         if len({a.source for a in c}) >= 2
     ][:MAX_EVENTS_PER_TOPIC]
 
-    # Sintesi AI in parallelo per tutti i cluster
-    summaries = await asyncio.gather(*[
-        summarize_event(topic_key, cluster)
-        for cluster in clusters
-    ])
+    # Sintesi AI sequenziale per rispettare il rate limit Gemini free tier
+    summaries = []
+    for cluster in clusters:
+        result = await summarize_event(topic_key, cluster)
+        summaries.append(result)
 
     events: list[NewsEvent] = []
     for cluster, (headline, summary) in zip(clusters, summaries):

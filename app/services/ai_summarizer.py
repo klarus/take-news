@@ -3,6 +3,7 @@ Sintesi AI degli eventi usando Gemini 2.5 Flash (default) o Groq.
 Swappabile via env AI_PROVIDER=gemini|groq
 """
 import os
+import asyncio
 import logging
 import httpx
 from ..models.news import Article
@@ -55,19 +56,27 @@ async def _call_gemini(prompt: str, articles: list[Article]) -> tuple[str, str]:
         logger.error("GEMINI_API_KEY non configurata — uso fallback")
         return _fallback(articles)
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-                json=payload,
-            )
-            resp.raise_for_status()
-            text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-            logger.info("Gemini OK — risposta ricevuta")
-            return _parse_response(text, articles)
-    except Exception as e:
-        logger.error("Errore chiamata Gemini: %s", e)
-        return _fallback(articles)
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+                    json=payload,
+                )
+                if resp.status_code == 429:
+                    wait = 7 * (attempt + 1)
+                    logger.warning("429 rate limit — attendo %ds (tentativo %d/3)", wait, attempt + 1)
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                logger.info("Gemini OK — risposta ricevuta")
+                return _parse_response(text, articles)
+        except Exception as e:
+            logger.error("Errore chiamata Gemini: %s", e)
+            if attempt < 2:
+                await asyncio.sleep(5)
+    return _fallback(articles)
 
 
 async def _call_groq(prompt: str, articles: list[Article]) -> tuple[str, str]:
