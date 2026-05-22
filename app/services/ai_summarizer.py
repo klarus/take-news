@@ -20,7 +20,10 @@ def _build_prompt(topic: str, articles: list[Article]) -> str:
         for a in articles
     )
     return f"""Sei un giornalista italiano che sintetizza notizie da più fonti.
-IMPORTANTE: rispondi SEMPRE e SOLO in italiano, anche se gli articoli sono in inglese o altra lingua.
+REGOLE ASSOLUTE:
+- Rispondi SEMPRE e SOLO in italiano, anche se gli articoli sono in inglese o altra lingua.
+- NON usare markdown, grassetto, corsivo o asterischi.
+- Inizia la risposta esattamente con "TITOLO:" senza spazi o caratteri prima.
 
 Topic: {topic}
 Articoli da {len(articles)} fonti diverse:
@@ -30,7 +33,7 @@ Scrivi:
 1. TITOLO: un titolo chiaro e neutro dell'evento in italiano (max 15 parole)
 2. SINTESI: un paragrafo di 3-4 frasi in italiano che riassume l'evento, basandoti solo su ciò che è confermato da più fonti. Sii neutrale e fattuale.
 
-Formato risposta (solo questo, nessun'altra parola):
+Formato risposta (esattamente così, nient'altro):
 TITOLO: <titolo in italiano>
 SINTESI: <sintesi in italiano>"""
 
@@ -83,14 +86,23 @@ async def _call_groq(prompt: str, articles: list[Article]) -> tuple[str, str]:
         return _fallback(articles)
 
 
+import re as _re
+
+def _clean(s: str) -> str:
+    # rimuove markdown bold/italic (**/*/__)
+    return _re.sub(r"[\*_]+", "", s).strip()
+
 def _parse_response(text: str, articles: list[Article]) -> tuple[str, str]:
     headline = ""
     summary = ""
+    # normalizza: rimuove markdown e cerca le label in modo flessibile
     for line in text.strip().splitlines():
-        if line.startswith("TITOLO:"):
-            headline = line.replace("TITOLO:", "").strip()
-        elif line.startswith("SINTESI:"):
-            summary = line.replace("SINTESI:", "").strip()
+        clean = _clean(line)
+        low = clean.lower()
+        if low.startswith("titolo:"):
+            headline = clean[len("titolo:"):].strip()
+        elif low.startswith("sintesi:"):
+            summary = clean[len("sintesi:"):].strip()
     if not headline:
         headline = articles[0].title if articles else "Notizia"
     if not summary:
