@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
+import logging
 import os
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 from .routers.news import router as news_router
@@ -25,6 +28,9 @@ app.add_middleware(
 app.include_router(news_router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "static")
+
+gemini_key = os.getenv("GEMINI_API_KEY", "")
+logger.info("GEMINI_API_KEY presente: %s", bool(gemini_key))
 
 
 @app.get("/health")

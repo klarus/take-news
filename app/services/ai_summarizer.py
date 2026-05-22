@@ -1,10 +1,13 @@
 """
-Sintesi AI degli eventi usando Gemini 1.5 Flash (default) o Groq.
+Sintesi AI degli eventi usando Gemini 2.5 Flash (default) o Groq.
 Swappabile via env AI_PROVIDER=gemini|groq
 """
 import os
+import logging
 import httpx
 from ..models.news import Article
+
+logger = logging.getLogger(__name__)
 
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -49,6 +52,7 @@ async def summarize_event(topic: str, articles: list[Article]) -> tuple[str, str
 
 async def _call_gemini(prompt: str, articles: list[Article]) -> tuple[str, str]:
     if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY non configurata — uso fallback")
         return _fallback(articles)
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
@@ -59,8 +63,10 @@ async def _call_gemini(prompt: str, articles: list[Article]) -> tuple[str, str]:
             )
             resp.raise_for_status()
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+            logger.info("Gemini OK — risposta ricevuta")
             return _parse_response(text, articles)
-    except Exception:
+    except Exception as e:
+        logger.error("Errore chiamata Gemini: %s", e)
         return _fallback(articles)
 
 
